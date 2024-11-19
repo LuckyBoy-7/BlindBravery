@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: c54e23f3da2cf4fd8a94f8a145eebfeb
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - mainShader: {fileID: 4800000, guid: 68daeb256e94e47169269e893518f875, type: 3}
+  - gaussianBlurShader: {fileID: 4800000, guid: 68daeb256e94e47169269e893518f875, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
