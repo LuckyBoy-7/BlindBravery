@@ -27,14 +27,17 @@ namespace BlindBravery.Actor.Player
         private const float SlipDownSpeedY = 30;
         private const float ClimbHopSpeedY = 120f;
         private const float ClimbHopSpeedX = 100f;
+        public float ClimbHopCheckDistY = 4;
+        // private const float ClimbHopCheckDistY = 4;
 
         private float climbNoMoveTimer;
         private int forceMoveX;
         private float forceMoveXTimer;
         public float Stamina;
-        public float wallBoostTimer;
-        public int wallBoostDir;
-        public float y;
+        private float wallBoostTimer;
+        private int wallBoostDir;
+        public int hopWaitX;
+        private float hopWaitXSpeed;
 
         private bool IsTired => CheckStamina < ClimbTiredThreshold;
 
@@ -49,6 +52,7 @@ namespace BlindBravery.Actor.Player
             wallSlideTimer = WallSlideTime;
             // 水平吸附
             MoveH((float)facing * ClimbCheckDistH);
+            LightManager.Instance.CreateLight(CenterAhead);
         }
 
         private int ClimbUpdate()
@@ -76,9 +80,17 @@ namespace BlindBravery.Actor.Player
                 return StNormal;
             }
 
-            // up是补偿
-            if (!CollideCheckBy(Vector2.right * (int)facing + Vector2.up))
+            // ClimbHop
+            Vector2 top = TopCenter + Vector2.right * (int)facing * (Width / 2 + 2);
+            Debug.DrawLine(top, top + Vector2.right * 10);
+            Vector2 bottom = top + Vector2.down * ClimbHopCheckDistY;
+
+            if (rb.velocity.y > 0 && Inputs.MoveY.Value == 1 && !PointCollideCheck(top) && !PointCollideCheck(bottom))
+            {
                 ClimbHop();
+                return StNormal;
+            }
+
             // 离开了墙, 一般是滑下去了
             if (!CollideCheckBy(Vector2.right * (int)facing))
             {
@@ -124,7 +136,8 @@ namespace BlindBravery.Actor.Player
 
         private void ClimbHop()
         {
-            rb.SetSpeedX((float)facing * ClimbHopSpeedX);
+            hopWaitX = (int)facing;
+            hopWaitXSpeed = (float)facing * ClimbHopSpeedX;
             rb.SetSpeedY(Max(rb.velocity.y, ClimbHopSpeedY));
         }
 
@@ -132,17 +145,20 @@ namespace BlindBravery.Actor.Player
         {
             Inputs.Jump.ConsumeBuffer();
             jumpGraceTimer = 0f;
-            if (moveX != 0)
-            {
-                forceMoveX = dir;
-                forceMoveXTimer = WallJumpForceTime;
-            }
+            // if (moveX != 0)
+            // {
+            //     forceMoveX = dir;
+            //     forceMoveXTimer = WallJumpForceTime;
+            // }
+            forceMoveX = dir;
+            forceMoveXTimer = WallJumpForceTime;
 
             rb.SetSpeedX(WallJumpSpeedH * dir);
             rb.SetSpeedY(JumpSpeedV);
             varJumpTimer = VarJumpTime;
             varJumpSpeed = JumpSpeedV;
             wallSlideTimer = WallSlideTime;
+            LightManager.Instance.CreateLight(BottomAhead);
         }
 
         private void ClimbJump()

@@ -29,12 +29,12 @@ namespace Lucky.Kits.Interactive
         private bool IsLongPressShake { get; set; } // 鼠标位置是否有偏移（长按必须一开始就长按，不能刚开始按，然后鼠标歪了还能长按（不然有点反直觉））
         [Header("Wipe")] [SerializeField] private float wipeCountDistanceThreshold = 3f;
         private float wipeValidDistanceThreshold = 1;
-        public static LayerMask LayerMask; // 减小开销
+        // public static LayerMask LayerMask; // 减小开销
 
         protected override void Awake()
         {
             base.Awake();
-            LayerMask = LayerMask.NameToLayer("Interactable");
+            // LayerMask = 1 << LayerMask.NameToLayer("Interactable");
         }
 
         protected override void ManagedUpdate()

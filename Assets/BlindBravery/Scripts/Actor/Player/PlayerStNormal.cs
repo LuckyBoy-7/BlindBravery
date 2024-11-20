@@ -54,32 +54,51 @@ namespace BlindBravery.Actor.Player
 
         private int NormalUpdate()
         {
-            // to climb, 必须按着抓, 速度不向上, 面朝方向和速度方向一样, 或者不动的时候
-            if (Inputs.Grab.Check && rb.velocity.y <= 0 && Sign(rb.velocity.x) != -(int)facing && !IsTired)
+            // 在斜坡上不能抓(或许可能可以调宽松点)
+            if (!nearSlope || !onGround)
             {
-                // 进入攀爬状态
-                if (CollideCheckBy((int)facing * ClimbCheckDistH * Vector2.right))
+                // to climb, 必须按着抓, 速度不向上, 面朝方向和速度方向一样, 或者不动的时候
+                if (Inputs.Grab.Check && rb.velocity.y <= 0 && Sign(rb.velocity.x) != -(int)facing && !IsTired)
                 {
-                    return StClimb;
-                }
-
-                // 向上吸附
-                if (Inputs.MoveY >= 0f)
-                    for (int i = 2; i <= ClimbUpCheckDist; i++)
+                    // 进入攀爬状态
+                    if (CollideCheckBy((int)facing * ClimbCheckDistH * Vector2.right, true))
                     {
-                        if (CollideCheckBy(Vector2.up * i + Vector2.right * (int)facing * ClimbCheckDistH) && !CollideCheckBy(Vector2.up * i))
-                        {
-                            MoveV(i);
-                            return StClimb;
-                        }
+                        return StClimb;
                     }
+
+                    // 向上吸附
+                    if (Inputs.MoveY >= 0f)
+                        for (int i = 2; i <= ClimbUpCheckDist; i++)
+                        {
+                            bool nearSolid = CollideCheckBy(Vector2.up * i + Vector2.right * (int)facing * ClimbCheckDistH, true);
+                            bool nearSlope = CollideCheckSlopeBy(Vector2.up * i + Vector2.right * (int)facing * ClimbCheckDistH);
+                            if (nearSolid && !nearSlope && !CollideCheckBy(Vector2.up * i))
+                            {
+                                MoveV(i);
+                                return StClimb;
+                            }
+                        }
+                }
             }
 
-            // 左右移动
-            float accelX = Abs(rb.velocity.x) > MaxRunSpeed && Sign(rb.velocity.x) == moveX ? RunReduce : RunAccel;
-            if (!onGround)
-                accelX *= AirMult;
-            rb.SetSpeedX(Approach(rb.velocity.x, MaxRunSpeed * moveX, accelX * Timer.DeltaTime()));
+            if (!nearSlope || !onGround)
+            {
+                // 左右移动
+                float accelX = Abs(rb.velocity.x) > MaxRunSpeed && Sign(rb.velocity.x) == moveX ? RunReduce : RunAccel;
+                if (!onGround)
+                    accelX *= AirMult;
+                rb.SetSpeedX(Approach(rb.velocity.x, MaxRunSpeed * moveX, accelX * Timer.DeltaTime()));
+            }
+            else
+            {
+                // 左右移动
+                float accelX = Abs(rb.velocity.x) > MaxRunSpeed && Sign(rb.velocity.x) == moveX ? RunReduce : RunAccel;
+                if (!onGround)
+                    accelX *= AirMult;
+                // * 0.95是误差补充
+                rb.SetSpeedX(Approach(rb.velocity.x, MaxRunSpeed * moveX * Cos(VectorToRadians(slopePerpendicularRight)), accelX * Timer.DeltaTime()));
+                rb.SetSpeedY(Approach(rb.velocity.y, MaxRunSpeed * moveX * Sin(VectorToRadians(slopePerpendicularRight)), accelX * Timer.DeltaTime() * 0.55f));
+            }
 
             // 坠落
             if (Inputs.MoveY.Value == -1f && -rb.velocity.y >= MaxFallSpeedY)
@@ -107,7 +126,7 @@ namespace BlindBravery.Actor.Player
                     if (rb.velocity.y <= 0f && wallSlideTimer > 0f && CollideCheckBy(Vector2.right * (int)facing))
                     {
                         wallSlideDir = (int)facing;
-                        fallSpeed = Lerp(160f, 20f, wallSlideTimer / WallSlideTime);
+                        fallSpeed = Lerp(160f, WallSlideStartSpeedY, wallSlideTimer / WallSlideTime);
                     }
                 }
 
@@ -167,22 +186,23 @@ namespace BlindBravery.Actor.Player
         private void Jump()
         {
             Inputs.Jump.ConsumeBuffer();
-            // if (moveX != 0)
-                // rb.AddSpeedX(JumpBoostH * moveX);
-            // MoveV(upY);
-            // rb.SetSpeedY(400);
-            rb.AddForce(new Vector2(120 * moveX, 105), ForceMode2D.Impulse);
+            if (moveX != 0)
+                rb.AddSpeedX(JumpBoostH * moveX);
+            rb.SetSpeedY(JumpSpeedV);
             jumpGraceTimer = 0;
             varJumpSpeed = JumpSpeedV;
             varJumpTimer = VarJumpTime;
             wallSlideTimer = WallSlideTime;
 
             sr.transform.localScale = new Vector2(0.7f, 1.3f);
+            
+            
+            LightManager.Instance.CreateLight(transform.position);
         }
 
         private bool WallJumpCheck(int dir)
         {
-            return CollideCheckBy(Vector2.right * dir * WallJumpCheckDistH);
+            return CollideCheckBy(Vector2.right * dir * WallJumpCheckDistH, true);
         }
     }
 }

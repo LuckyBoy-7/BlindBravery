@@ -1,13 +1,12 @@
-using System;
-using System.Collections;
-using Lucky.Framework;
-using Lucky.Kits.Extensions;
-using Lucky.Kits;
-using Lucky.Framework.Inputs_;
 using BlindBravery.Enums;
+using Lucky.Framework;
+using Lucky.Framework.Inputs_;
+using Lucky.Kits.Extensions;
 using Lucky.Kits.Utilities;
 using UnityEngine;
 using static Lucky.Kits.Utilities.MathUtils;
+using StateMachine = Lucky.Kits.Utilities.StateMachine;
+using Timer = Lucky.Kits.Utilities.Timer;
 
 namespace BlindBravery.Actor.Player
 {
@@ -30,21 +29,27 @@ namespace BlindBravery.Actor.Player
         private const int StNormal = 0;
         private const int StClimb = 1;
 
+        public float Width => 8;
+        public float Height => 11;
+        public Vector2 TopCenter => transform.position + Vector3.up * Height;
+        public Vector2 BottomAhead => transform.position + Vector3.right * Width / 2 * (int)facing;
+        public Vector2 CenterAhead => BottomAhead + Vector2.up * Height / 2;
+
+        private RaycastHit2D[] collideCheckHelper = new RaycastHit2D[1];
         public int moveX;
         private Rigidbody2D rb;
         private StateMachine stateMachine;
-        private RaycastHit2D[] collideCheckHelper = new RaycastHit2D[1];
         private Facings facing = Facings.Right;
         private Vector2 lastAim = Vector2.right;
         private Vector2 preSpeed;
         public bool onGround;
         public Vector2 Right => AngleToVector(sr.transform.eulerAngles.z, 1);
-        private bool hasChangedRotationInThisFrame = false;
 
         public static readonly Color NormalHairColor = ColorUtils.HexToColor("AC3232");
         public static readonly Color UsedHairColor = ColorUtils.HexToColor("44B7FF");
-        public float distX;
-        public float upY;
+        private const float SlopeCheckDistY = 4;
+        public bool nearSlope;
+        private Vector2 slopePerpendicularRight;
 
         private void Awake()
         {
@@ -150,7 +155,6 @@ namespace BlindBravery.Actor.Player
             // todo: =============================================================================
             // component
             stateMachine.Update();
-            UpdateSprite();
 
             // debug
             SpeedDebug = rb.velocity;
@@ -164,33 +168,66 @@ namespace BlindBravery.Actor.Player
         {
             base.ManagedFixedUpdate();
             // 是否在地面
-            onGround = CollideCheckBy(Vector2.down) && rb.velocity.y <= 0;
+            // onGround = CollideCheckBy(Vector2.down);
+            onGround = CollideCheckBy(Vector2.down) && (nearSlope || rb.velocity.y <= 0);
+            SlopeCheck();
             //
             preSpeed = rb.velocity;
-            hasChangedRotationInThisFrame = false;
             // if (onGround)
             //     MoveV(-202202);
 
             // 可能是斜坡
-            // float distX = 4;
-            if ((CollideCheckBy(Vector2.right * distX) || CollideCheckBy(Vector2.left * distX)))
+            float distX = 4;
+            // if ((CollideCheckSlopeBy(Vector2.right * distX) || CollideCheckSlopeBy(Vector2.left * distX)))
+            if ((CollideCheckSlopeBy(Vector2.right * distX) || CollideCheckSlopeBy(Vector2.left * distX)))
             {
                 hitbox = capsuleCollider;
                 boxCollider.enabled = false;
                 capsuleCollider.enabled = true;
             }
-            // else
-            // {
-            //     hitbox = boxCollider;
-            //     boxCollider.enabled = true;
-            //     capsuleCollider.enabled = false;
-            // }
+            else
+            {
+                hitbox = boxCollider;
+                boxCollider.enabled = true;
+                capsuleCollider.enabled = false;
+            }
+
+            if (hopWaitX != 0)
+            {
+                // 变向或者下落就取消climbhop
+                if (Sign(rb.velocity.x) == -hopWaitX || rb.velocity.y < 0f)
+                {
+                    hopWaitX = 0;
+                }
+                else if (!CollideCheckBy(Vector3.right * hopWaitX))
+                {
+                    print(123);
+                    rb.AddSpeedX(hopWaitXSpeed);
+                    hopWaitX = 0;
+                }
+            }
+        }
+
+        private void SlopeCheck()
+        {
+            RaycastHit2D raycastHit2D = Physics2D.Raycast(transform.position, Vector2.down, SlopeCheckDistY, 1 << LayerMask.NameToLayer("Slope"));
+            // print(raycastHit2D.collider);
+            Debug.DrawRay(transform.position, Vector3.down * SlopeCheckDistY, Color.blue);
+            nearSlope = false;
+            if (raycastHit2D.collider)
+            {
+                // print(raycastHit2D.collider.name);
+                slopePerpendicularRight = raycastHit2D.normal.TurnRight();
+                nearSlope = true;
+                Debug.DrawRay(raycastHit2D.point, slopePerpendicularRight * SlopeCheckDistY, Color.red);
+            }
         }
 
         public override void Render()
         {
             base.Render();
 
+            UpdateSprite();
 
             // 体力不足闪红
             bool flash = Timer.OnInterval(0.1f);
@@ -198,32 +235,45 @@ namespace BlindBravery.Actor.Player
             {
                 sr.color = Color.red;
             }
-
-
-            // 翻转图像
-            sr.transform.SetScaleX(Abs(sr.transform.localScale.x) * (int)facing);
         }
 
         private void UpdateSprite()
         {
             sr.transform.SetScaleX(Sign2(sr.transform.localScale.x) * Approach(Abs(sr.transform.localScale.x), 1f, 1.75f * Timer.DeltaTime()));
             sr.transform.SetScaleY(Sign2(sr.transform.localScale.y) * Approach(Abs(sr.transform.localScale.y), 1f, 1.75f * Timer.DeltaTime()));
-            sr.transform.eulerAngles = new Vector3(0, 0, Approach(sr.transform.eulerAngles.z, 0, 100 * Timer.DeltaTime()));
+
+            // 翻转图像
+            sr.transform.SetScaleX(Abs(sr.transform.localScale.x) * (int)facing);
+
+            // 旋转
+            float rotateAngle = 0;
+            float angle = SignedAngle(Vector2.right, slopePerpendicularRight);
+            if (nearSlope && -75 < angle && angle < 75)
+                rotateAngle = angle;
+            float start = sr.transform.eulerAngles.z;
+            if (start > 180) // 因为这个z -> [0, 360]
+                start -= 360;
+            sr.transform.eulerAngles = new Vector3(0, 0, Approach(start, rotateAngle, 250 * Timer.DeltaTime()));
         }
 
-        private bool CollideCheckBy(Vector2 offset)
+        private bool PointCollideCheck(Vector2 pos)
         {
-            return Physics2D.OverlapBox(
-                hitbox.transform.position + (Vector3)hitbox.offset + (Vector3)offset, hitbox.bounds.size * 0.95f, 0, 1 << LayerMask.NameToLayer("Solid")
-            );
-            var prePos = hitbox.transform.position;
-            hitbox.transform.position += (Vector3)offset;
-            Physics2D.SyncTransforms();
-            bool res = hitbox.IsTouchingLayers(1 << LayerMask.NameToLayer("Solid"));
-            hitbox.transform.position = prePos;
-            Physics2D.SyncTransforms();
-            return res;
-            // return hitbox.Cast(vec.normalized, new ContactFilter2D() { layerMask =  }, collideCheckHelper, vec.magnitude) > 0;
+            LayerMask layerMask = 1 << LayerMask.NameToLayer("Solid") | 1 << LayerMask.NameToLayer("Slope");
+            return Physics2D.OverlapPoint(pos, layerMask);
+        }
+
+        private bool CollideCheckBy(Vector2 offset, bool ignoreSlope = false)
+        {
+            LayerMask layerMask = 1 << LayerMask.NameToLayer("Solid");
+            if (!ignoreSlope)
+                layerMask |= 1 << LayerMask.NameToLayer("Slope");
+            return Physics2D.OverlapBox(hitbox.transform.position + (Vector3)hitbox.offset + (Vector3)offset, hitbox.bounds.size * 0.99f, 0, layerMask);
+        }
+
+        private bool CollideCheckSlopeBy(Vector2 offset)
+        {
+            LayerMask layerMask = 1 << LayerMask.NameToLayer("Slope");
+            return Physics2D.OverlapBox(hitbox.transform.position + (Vector3)hitbox.offset + (Vector3)offset, hitbox.bounds.size * 0.99f, 0, layerMask);
         }
 
 
@@ -233,6 +283,8 @@ namespace BlindBravery.Actor.Player
                 OnCollideH();
             else if (preSpeed.y != rb.velocity.y)
                 OnCollideV();
+
+            LightManager.Instance.CreateLight(other.GetContact(0).point);
         }
 
         private void OnCollideV()
@@ -263,6 +315,7 @@ namespace BlindBravery.Actor.Player
         /// <param name="x"></param>
         private void MoveH(float x)
         {
+            // todo : 晚点修修(实在修不好可能就干脆Sprite放大点了)
             // rb.MovePosition(rb.position + Vector2.right * x);
             if (hitbox.Cast(Vector2.right * Sign(x), collideCheckHelper, Abs(x)) > 0)
             {
@@ -289,45 +342,6 @@ namespace BlindBravery.Actor.Player
 
             transform.AddPositionY(y);
             Physics2D.SyncTransforms();
-        }
-
-        private void OnCollisionStay2D(Collision2D other)
-        {
-            // if (other.otherCollider is not CircleCollider2D)
-            // return;
-            ContactPoint2D contact = other.GetContact(0);
-            // if (this.Dist(contact.point) <= 2)
-            //     return;
-
-            Vector2 normal = contact.normal;
-            float angle = VectorAngle(normal);
-            if (15 < angle && angle < 165)
-            {
-                // rb.SetRotation(angle - 90);
-                sr.transform.eulerAngles = new Vector3(0, 0, angle - 90);
-                // transform.position = contact.point;
-                hasChangedRotationInThisFrame = true;
-            }
-        }
-
-
-        private void OnCollisionExit2D(Collision2D other)
-        {
-            bool justLeaveSlope = sr.transform.eulerAngles.z != 0 && CollideCheckBy(Vector2.down * 3) && rb.velocity.y <= 1;
-            if (justLeaveSlope)
-            {
-                print("PushDown");
-            }
-
-            StartCoroutine(Wait());
-            this.WaitForTwoFrameToExecution(
-                () => { }
-            );
-        }
-
-        IEnumerator Wait()
-        {
-            yield return new WaitForFixedUpdate();
         }
     }
 }

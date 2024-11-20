@@ -47,7 +47,7 @@ namespace Lucky.Kits.Utilities
             return new Tuple<float, float>(quotient, remain);
         }
 
-        public static float VectorRadians(Vector2 vec)
+        public static float VectorToRadians(Vector2 vec)
         {
             float radians = Atan2(vec.y, vec.x);
             if (radians < 0)
@@ -55,7 +55,7 @@ namespace Lucky.Kits.Utilities
             return radians;
         }
 
-        public static float VectorAngle(Vector2 vec) => RadiansToDegree(VectorRadians(vec));
+        public static float VectorToAngle(Vector2 vec) => RadiansToDegree(VectorToRadians(vec));
 
         public static Vector2 RadiansToVector(float angleRadians, float length)
         {
@@ -81,6 +81,8 @@ namespace Lucky.Kits.Utilities
         {
             return new Vector2(vec.y, -vec.x);
         }
+
+        public static Vector2 TurnLeft(this Vector2 vec) => -TurnRight(vec);
 
         public static float Clamp(float value, float min, float max)
         {
